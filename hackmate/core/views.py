@@ -4,6 +4,26 @@ from .models import Resource, SearchQuery
 from django.db.models import Q
 from .data_structures import search_queue, resource_heap, resource_trie
 
+# Initialize trie with existing data
+def initialize_data_structures():
+    # Clear existing data in data structures
+    resource_trie.root = resource_trie.__class__().root
+    
+    # Load all resources into trie and heap
+    for resource in Resource.objects.all():
+        # Add to trie
+        for word in resource.title.split():
+            resource_trie.insert(word.lower(), resource.id)
+        if resource.keywords:
+            for keyword in resource.keywords.split(','):
+                resource_trie.insert(keyword.strip().lower(), resource.id)
+        
+        # Add to heap
+        resource_heap.push(resource)
+
+# Call this when Django starts
+initialize_data_structures()
+
 def home(request):
     return render(request, 'core/home.html')
 
@@ -16,7 +36,7 @@ def search(request):
         
         # Get resource IDs from trie
         resource_ids = set()
-        for word in query.split():
+        for word in query.lower().split():
             resource_ids.update(resource_trie.search_prefix(word))
         
         # Get matching resources
