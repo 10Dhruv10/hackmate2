@@ -56,4 +56,3 @@ class Command(BaseCommand):
             resource = Resource.objects.create(**data)
             resource_heap.push(resource)
             self.stdout.write(self.style.SUCCESS(f'Created resource: {resource.title}'))
-

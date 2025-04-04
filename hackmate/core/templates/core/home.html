@@ -38,26 +38,11 @@
         }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen">
+<body class="bg-gray-100">
     <div class="container mx-auto px-4 py-8">
         <h1 class="text-4xl font-bold text-center mb-8">HackMate</h1>
         
-        <!-- Navigation Buttons -->
-        <div class="flex justify-center space-x-4 mb-8">
-            <button onclick="showSection('search')" 
-                    id="searchButton"
-                    class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400">
-                Search Resources
-            </button>
-            <button onclick="showSection('teams')" 
-                    id="teamsButton"
-                    class="px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-400">
-                Find Teams
-            </button>
-        </div>
-
-        <!-- Search Section -->
-        <div id="searchSection" class="max-w-2xl mx-auto">
+        <div class="max-w-2xl mx-auto">
             <div class="relative">
                 <input type="text" 
                        id="search" 
@@ -68,18 +53,12 @@
                     Search
                 </button>
             </div>
-            <div id="searchResults" class="mt-4 space-y-4"></div>
-        </div>
-
-        <!-- Teams Section -->
-        <div id="teamsSection" class="max-w-4xl mx-auto hidden">
-            <h2 class="text-2xl font-bold mb-4">Available Teams</h2>
-            <div id="teamResults" class="space-y-4"></div>
+            
+            <div id="results" class="mt-4 space-y-4"></div>
         </div>
     </div>
 
     <script>
-        // Get CSRF token
         function getCookie(name) {
             let cookieValue = null;
             if (document.cookie && document.cookie !== '') {
@@ -96,42 +75,14 @@
         }
         const csrftoken = getCookie('csrftoken');
 
-        // Section visibility handling
-        function showSection(section) {
-            const searchSection = document.getElementById('searchSection');
-            const teamsSection = document.getElementById('teamsSection');
-            const searchButton = document.getElementById('searchButton');
-            const teamsButton = document.getElementById('teamsButton');
-            
-            if (section === 'search') {
-                searchSection.classList.remove('hidden');
-                teamsSection.classList.add('hidden');
-                searchButton.classList.add('bg-blue-600');
-                teamsButton.classList.remove('bg-green-600');
-            } else {
-                searchSection.classList.add('hidden');
-                teamsSection.classList.remove('hidden');
-                searchButton.classList.remove('bg-blue-600');
-                teamsButton.classList.add('bg-green-600');
-                loadTeams();
-            }
-        }
-
-        // Search functionality
-        function handleSearch() {
-            const query = document.getElementById('search').value.trim();
-            if (query) {
-                performSearch(query);
-            }
-        }
-
         function performSearch(query) {
+            const resultsDiv = document.getElementById('results');
             fetch(`/search/?q=${encodeURIComponent(query)}`)
                 .then(response => response.json())
                 .then(data => {
-                    const searchResults = document.getElementById('searchResults');
                     if (data.results.length === 0) {
-                        searchResults.innerHTML = `
+                        // Show no results found message
+                        resultsDiv.innerHTML = `
                             <div class="no-results">
                                 <img src="https://cdn-icons-png.flaticon.com/512/7486/7486744.png" 
                                      alt="No results" 
@@ -144,7 +95,7 @@
                             </div>
                         `;
                     } else {
-                        searchResults.innerHTML = data.results.map(result => `
+                        resultsDiv.innerHTML = data.results.map(result => `
                             <div class="bg-white p-4 rounded-lg shadow">
                                 <h3 class="font-bold">${result.title}</h3>
                                 <p class="text-gray-600">${result.description}</p>
@@ -161,91 +112,20 @@
                 });
         }
 
-        // Teams functionality
-        function loadTeams() {
-            fetch('/teams/')
-                .then(response => response.json())
-                .then(data => {
-                    const teamResults = document.getElementById('teamResults');
-                    if (data.teams.length === 0) {
-                        teamResults.innerHTML = `
-                            <div class="no-results">
-                                <img src="https://cdn-icons-png.flaticon.com/512/7486/7486744.png" 
-                                     alt="No teams" 
-                                     class="w-32 h-32 mx-auto mb-4 opacity-50">
-                                <h3 class="text-xl font-semibold text-gray-600">No teams available</h3>
-                                <p class="text-gray-500 mt-2">There are currently no teams looking for members.</p>
-                            </div>
-                        `;
-                    } else {
-                        teamResults.innerHTML = data.teams.map(team => `
-                            <div class="bg-white p-6 rounded-lg shadow-md">
-                                <div class="flex justify-between items-start">
-                                    <div>
-                                        <h3 class="text-xl font-bold">${team.name}</h3>
-                                        <p class="text-gray-600 mt-1">${team.description}</p>
-                                        <div class="mt-2">
-                                            <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                                                ${team.current_members}/${team.max_members} Members
-                                            </span>
-                                            <span class="bg-green-100 text-green-800 px-2 py-1 rounded text-sm ml-2">
-                                                ${team.members_needed} Spot${team.members_needed > 1 ? 's' : ''} Left
-                                            </span>
-                                        </div>
-                                        <div class="mt-4 text-sm text-gray-600">
-                                            <p>📧 Email: ${team.contact_email}</p>
-                                            <p>📱 Phone: ${team.contact_phone}</p>
-                                            <p>📍 Address: ${team.contact_address}</p>
-                                        </div>
-                                    </div>
-                                    <button onclick="joinTeam(${team.id}, this)" 
-                                            class="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600">
-                                        Join Team
-                                    </button>
-                                </div>
-                            </div>
-                        `).join('');
-                    }
-                });
+        function handleSearch() {
+            const query = document.getElementById('search').value.trim();
+            if (query) {
+                performSearch(query);
+            }
         }
 
-        function joinTeam(teamId, button) {
-            fetch(`/teams/join/${teamId}/`, {
-                method: 'POST',
-                headers: {
-                    'X-CSRFToken': csrftoken,
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    if (data.is_full) {
-                        button.disabled = true;
-                        button.classList.add('bg-gray-400');
-                        button.classList.remove('bg-green-500', 'hover:bg-green-600');
-                        button.textContent = 'Team Full';
-                    }
-                    loadTeams(); // Reload teams to update the queue
-                }
-            });
-        }
-
-        function upvoteResource(resourceId, button) {
-            fetch(`/upvote/${resourceId}/`, {
-                method: 'POST',
-                headers: {
-                    'X-CSRFToken': csrftoken,
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    button.textContent = `⬆️ ${data.upvotes}`;
-                }
-            });
-        }
+        // Handle enter key press
+        document.getElementById('search').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleSearch();
+            }
+        });
 
         // Autocomplete setup
         $(document).ready(function() {
@@ -262,18 +142,23 @@
                     return false;
                 }
             });
+        });
 
-            // Handle enter key in search
-            $("#search").on('keypress', function(e) {
-                if (e.which == 13) {
-                    e.preventDefault();
-                    handleSearch();
+        function upvoteResource(resourceId, button) {
+            fetch(`/upvote/${resourceId}/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrftoken,
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    button.textContent = `⬆️ ${data.upvotes}`;
                 }
             });
-
-            // Show search section by default
-            showSection('search');
-        });
+        }
     </script>
 </body>
 </html>

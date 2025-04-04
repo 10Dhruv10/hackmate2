@@ -1,79 +1,22 @@
-from django.shortcuts import render
-from django.http import JsonResponse
-from django.views.decorators.csrf import ensure_csrf_cookie, csrf_protect
-from django.views.decorators.http import require_http_methods
+# Add these imports at the top if not already present
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.db.models import Q
-from .models import Resource, SearchQuery
-from .data_structures import Trie, ResourceHeap
 
-# Global variables
-resource_trie = None
-resource_heap = None
-
-def initialize_data_structures():
-    """Initialize data structures lazily"""
-    global resource_trie, resource_heap
-    
-    if resource_trie is None:
-        resource_trie = Trie()
-        resource_heap = ResourceHeap()
-        
-        try:
-            for resource in Resource.objects.all():
-                # Add to trie
-                for word in resource.title.split():
-                    resource_trie.insert(word.lower(), resource.id)
-                if resource.keywords:
-                    for keyword in resource.keywords.split(','):
-                        resource_trie.insert(keyword.strip().lower(), resource.id)
-                
-                # Add to heap
-                resource_heap.push(resource)
-        except:
-            # Handle case when database table doesn't exist yet
-            pass
-
+# Add this decorator to your home view
 @ensure_csrf_cookie
 def home(request):
-    initialize_data_structures()  # Initialize when needed
     return render(request, 'core/home.html')
 
-def search(request):
-    initialize_data_structures()  # Initialize when needed
-    query = request.GET.get('q', '')
-    if query:
-        SearchQuery.objects.create(query=query)
-        
-        # Get resource IDs from trie
-        resource_ids = set()
-        for word in query.lower().split():
-            resource_ids.update(resource_trie.search_prefix(word))
-        
-        # Get matching resources
-        results = Resource.objects.filter(id__in=resource_ids)
-        
-        return JsonResponse({
-            'results': [{
-                'id': r.id,
-                'title': r.title,
-                'description': r.description,
-                'url': r.url,
-                'category': r.get_category_display(),
-                'upvotes': r.upvotes,
-                'keywords': r.keywords
-            } for r in results]
-        })
-    return JsonResponse({'results': []})
-
+# Add this new view for suggestions
 def search_suggestions(request):
-    initialize_data_structures()  # Initialize when needed
     query = request.GET.get('q', '').lower()
     suggestions = []
     
     if query and len(query) >= 2:
         # Get suggestions from trie
         resource_ids = set()
-        resource_ids.update(resource_trie.search_prefix(query))
+        for word in query.split():
+            resource_ids.update(resource_trie.search_prefix(word))
         
         # Get matching resources
         resources = Resource.objects.filter(id__in=resource_ids)
@@ -88,14 +31,51 @@ def search_suggestions(request):
         # Filter suggestions that start with the query
         suggestions = [word for word in words if word.startswith(query)]
         suggestions.sort()
-        suggestions = suggestions[:5]
+        suggestions = suggestions[:5]  # Limit to top 5 suggestions
     
     return JsonResponse({'suggestions': suggestions})
+
+def search(request):
+    query = request.GET.get('q', '')
+    if query:
+        # Add search query to queue
+        search_queue.put(query)
+        SearchQuery.objects.create(query=query)
+        
+        # Get resource IDs from trie
+        resource_ids = set()
+        for word in query.lower().split():
+            resource_ids.update(resource_trie.search_prefix(word))
+        
+        # Get matching resources
+        results = Resource.objects.filter(id__in=resource_ids)
+        
+        # Use heap for ranking
+        heap = resource_heap.__class__()
+        for resource in results:
+            heap.push(resource)
+        
+        top_results = heap.get_top_k(5)
+        
+        return JsonResponse({
+            'results': [{
+                'id': r.id,
+                'title': r.title,
+                'description': r.description,
+                'url': r.url,
+                'category': r.get_category_display(),
+                'upvotes': r.upvotes,
+                'keywords': r.keywords
+            } for r in top_results]
+        })
+    return JsonResponse({'results': []})
+
+from django.views.decorators.csrf import csrf_protect
+from django.views.decorators.http import require_http_methods
 
 @csrf_protect
 @require_http_methods(["POST"])
 def upvote(request, resource_id):
-    initialize_data_structures()  # Initialize when needed
     try:
         resource = Resource.objects.get(id=resource_id)
         resource.upvotes += 1
