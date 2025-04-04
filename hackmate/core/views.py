@@ -1,3 +1,78 @@
+
+
+from django.shortcuts import render
+from django.http import JsonResponse
+from django.views.decorators.csrf import ensure_csrf_cookie, csrf_protect
+from django.views.decorators.http import require_http_methods
+from django.db.models import F
+from collections import deque
+from .models import Resource, SearchQuery, Team
+
+# Global variables
+team_queue = deque()
+is_queue_initialized = False
+
+def get_sorted_teams():
+    """Get teams sorted by priority"""
+    return Team.objects.filter(current_members__lt=F('max_members')).order_by(
+        F('max_members') - F('current_members'),  # First priority: fewer spots needed
+        '-max_members',  # Second priority: larger team size
+        'created_at'  # Third priority: older teams first
+    )
+
+def initialize_team_queue():
+    """Initialize the team queue if not already initialized"""
+    global team_queue, is_queue_initialized
+    if not is_queue_initialized:
+        team_queue.clear()
+        teams = get_sorted_teams()
+        for team in teams:
+            team_queue.append(team)
+        is_queue_initialized = True
+
+def get_teams(request):
+    """Get all teams in priority order"""
+    initialize_team_queue()
+    teams_list = list(team_queue)
+    return JsonResponse({
+        'teams': [{
+            'id': team.id,
+            'name': team.name,
+            'description': team.description,
+            'max_members': team.max_members,
+            'current_members': team.current_members,
+            'members_needed': team.members_needed,
+            'contact_email': team.contact_email,
+            'contact_phone': team.contact_phone,
+            'contact_address': team.contact_address,
+        } for team in teams_list]
+    })
+
+@csrf_protect
+@require_http_methods(["POST"])
+def join_team(request, team_id):
+    try:
+        team = Team.objects.get(id=team_id)
+        if not team.is_full:
+            team.current_members += 1
+            team.save()
+            
+            # Reinitialize queue if team is now full
+            global is_queue_initialized
+            is_queue_initialized = False  # Force reinitialization
+            initialize_team_queue()
+            
+            return JsonResponse({
+                'success': True,
+                'current_members': team.current_members,
+                'is_full': team.is_full
+            })
+        return JsonResponse({'success': False, 'error': 'Team is full'}, status=400)
+    except Team.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Team not found'}, status=404)
+
+# Your existing search-related views here...
+
 from django.shortcuts import render
 from django.http import JsonResponse
 from .models import Resource, SearchQuery
@@ -115,69 +190,3 @@ def search_suggestions(request):
         suggestions = suggestions[:5]  # Limit to top 5 suggestions
     
     return JsonResponse({'suggestions': suggestions})
-
-
-# Add to your existing views.py
-from collections import deque
-from django.db.models import F
-from .models import Team
-
-# Global team queue
-team_queue = deque()
-
-def initialize_team_queue():
-    # Clear existing queue
-    team_queue.clear()
-    
-    # Get all non-full teams and sort them by priority
-    teams = Team.objects.filter(current_members__lt=F('max_members')).order_by(
-        F('max_members') - F('current_members'),  # First priority: fewer spots needed
-        '-max_members',  # Second priority: larger team size
-        'created_at'  # Third priority: older teams first
-    )
-    
-    # Add teams to queue
-    for team in teams:
-        team_queue.append(team)
-
-# Initialize queue when Django starts
-initialize_team_queue()
-
-def get_teams(request):
-    # Convert queue to list for JSON serialization
-    teams_list = list(team_queue)
-    return JsonResponse({
-        'teams': [{
-            'id': team.id,
-            'name': team.name,
-            'description': team.description,
-            'max_members': team.max_members,
-            'current_members': team.current_members,
-            'members_needed': team.members_needed,
-            'contact_email': team.contact_email,
-            'contact_phone': team.contact_phone,
-            'contact_address': team.contact_address,
-        } for team in teams_list]
-    })
-
-@csrf_protect
-@require_http_methods(["POST"])
-def join_team(request, team_id):
-    try:
-        team = Team.objects.get(id=team_id)
-        if not team.is_full:
-            team.current_members += 1
-            team.save()
-            
-            # Reinitialize queue if team is now full
-            if team.is_full:
-                initialize_team_queue()
-            
-            return JsonResponse({
-                'success': True,
-                'current_members': team.current_members,
-                'is_full': team.is_full
-            })
-        return JsonResponse({'success': False, 'error': 'Team is full'}, status=400)
-    except Team.DoesNotExist:
-        return JsonResponse({'success': False, 'error': 'Team not found'}, status=404)
