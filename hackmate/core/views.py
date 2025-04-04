@@ -1,61 +1,45 @@
-# Add these imports at the top if not already present
+from django.shortcuts import render
+from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.db.models import Q
+from .models import Resource, SearchQuery
 
-# Add this decorator to your home view
 @ensure_csrf_cookie
 def home(request):
     return render(request, 'core/home.html')
 
-# Add this new view for suggestions
-def search_suggestions(request):
-    query = request.GET.get('q', '').lower()
-    suggestions = []
-    
-    if query and len(query) >= 2:
-        # Get suggestions from trie
-        resource_ids = set()
-        for word in query.split():
-            resource_ids.update(resource_trie.search_prefix(word))
-        
-        # Get matching resources
-        resources = Resource.objects.filter(id__in=resource_ids)
-        
-        # Extract unique words from titles and keywords
-        words = set()
-        for resource in resources:
-            words.update(word.lower() for word in resource.title.split())
-            if resource.keywords:
-                words.update(keyword.strip().lower() for keyword in resource.keywords.split(','))
-        
-        # Filter suggestions that start with the query
-        suggestions = [word for word in words if word.startswith(query)]
-        suggestions.sort()
-        suggestions = suggestions[:5]  # Limit to top 5 suggestions
-    
-    return JsonResponse({'suggestions': suggestions})
-
 def search(request):
-    query = request.GET.get('q', '')
+    query = request.GET.get('q', '').lower()
     if query:
-        # Add search query to queue
-        search_queue.put(query)
         SearchQuery.objects.create(query=query)
         
-        # Get resource IDs from trie
-        resource_ids = set()
-        for word in query.lower().split():
-            resource_ids.update(resource_trie.search_prefix(word))
+        # Split query into words for more precise matching
+        query_words = query.split()
         
-        # Get matching resources
-        results = Resource.objects.filter(id__in=resource_ids)
+        # Base query looking for matches in title, description, or keywords
+        results = Resource.objects.filter(
+            Q(title__icontains=query) |
+            Q(keywords__icontains=query)
+        ).distinct()
         
-        # Use heap for ranking
-        heap = resource_heap.__class__()
+        # Filter out less relevant results
+        filtered_results = []
         for resource in results:
-            heap.push(resource)
+            title_lower = resource.title.lower()
+            keywords_lower = resource.keywords.lower() if resource.keywords else ""
+            
+            # Check if query terms appear in title or keywords
+            is_relevant = any(
+                word in title_lower or 
+                word in keywords_lower
+                for word in query_words
+            )
+            
+            if is_relevant:
+                filtered_results.append(resource)
         
-        top_results = heap.get_top_k(5)
+        # Sort by upvotes
+        filtered_results.sort(key=lambda x: x.upvotes, reverse=True)
         
         return JsonResponse({
             'results': [{
@@ -66,24 +50,38 @@ def search(request):
                 'category': r.get_category_display(),
                 'upvotes': r.upvotes,
                 'keywords': r.keywords
-            } for r in top_results]
+            } for r in filtered_results]
         })
     return JsonResponse({'results': []})
 
-from django.views.decorators.csrf import csrf_protect
-from django.views.decorators.http import require_http_methods
+def search_suggestions(request):
+    query = request.GET.get('q', '').lower()
+    suggestions = []
+    
+    if query and len(query) >= 2:
+        resources = Resource.objects.filter(
+            Q(title__icontains=query) |
+            Q(keywords__icontains=query)
+        ).distinct()
+        
+        words = set()
+        for resource in resources:
+            # Only add suggestions from relevant fields
+            words.update(word.lower() for word in resource.title.split())
+            if resource.keywords:
+                words.update(keyword.strip().lower() for keyword in resource.keywords.split(','))
+        
+        suggestions = [word for word in words if word.startswith(query)]
+        suggestions.sort()
+        suggestions = suggestions[:5]
+    
+    return JsonResponse({'suggestions': suggestions})
 
-@csrf_protect
-@require_http_methods(["POST"])
 def upvote(request, resource_id):
     try:
         resource = Resource.objects.get(id=resource_id)
         resource.upvotes += 1
         resource.save()
-        
-        # Update resource in heap
-        resource_heap.push(resource)
-        
         return JsonResponse({'success': True, 'upvotes': resource.upvotes})
     except Resource.DoesNotExist:
         return JsonResponse({'success': False}, status=404)

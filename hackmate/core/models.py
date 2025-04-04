@@ -11,20 +11,7 @@ class Resource(models.Model):
     ])
     upvotes = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
-    keywords = models.CharField(max_length=500, blank=True, help_text="Comma-separated keywords")
-
-    def save(self, *args, **kwargs):
-        is_new = self.pk is None
-        super().save(*args, **kwargs)
-        
-        if is_new:
-            from .data_structures import resource_trie
-            # Index the title and keywords in the trie
-            for word in self.title.split():
-                resource_trie.insert(word, self.id)
-            if self.keywords:
-                for keyword in self.keywords.split(','):
-                    resource_trie.insert(keyword.strip(), self.id)
+    keywords = models.CharField(max_length=500, blank=True)
 
     def __str__(self):
         return self.title
