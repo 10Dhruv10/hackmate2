@@ -37,7 +37,6 @@ class ResourceHeap:
         self.heap = []
     
     def push(self, resource):
-        # Use negative upvotes for max heap
         heapq.heappush(self.heap, (-resource.upvotes, resource.id, resource))
     
     def get_top_k(self, k: int) -> List:
@@ -47,8 +46,3 @@ class ResourceHeap:
             if temp_heap:
                 result.append(heapq.heappop(temp_heap)[2])
         return result
-
-# Global instances
-search_queue = Queue()
-resource_heap = ResourceHeap()
-resource_trie = Trie()
