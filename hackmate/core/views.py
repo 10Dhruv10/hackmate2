@@ -7,27 +7,39 @@ from .models import Resource, SearchQuery
 from .data_structures import Trie, ResourceHeap
 
 # Global variables
-resource_trie = Trie()
-resource_heap = ResourceHeap()
+resource_trie = None
+resource_heap = None
 
 def initialize_data_structures():
-    """Initialize data structures"""
-    for resource in Resource.objects.all():
-        # Add to trie
-        for word in resource.title.split():
-            resource_trie.insert(word.lower(), resource.id)
-        if resource.keywords:
-            for keyword in resource.keywords.split(','):
-                resource_trie.insert(keyword.strip().lower(), resource.id)
+    """Initialize data structures lazily"""
+    global resource_trie, resource_heap
+    
+    if resource_trie is None:
+        resource_trie = Trie()
+        resource_heap = ResourceHeap()
         
-        # Add to heap
-        resource_heap.push(resource)
+        try:
+            for resource in Resource.objects.all():
+                # Add to trie
+                for word in resource.title.split():
+                    resource_trie.insert(word.lower(), resource.id)
+                if resource.keywords:
+                    for keyword in resource.keywords.split(','):
+                        resource_trie.insert(keyword.strip().lower(), resource.id)
+                
+                # Add to heap
+                resource_heap.push(resource)
+        except:
+            # Handle case when database table doesn't exist yet
+            pass
 
 @ensure_csrf_cookie
 def home(request):
+    initialize_data_structures()  # Initialize when needed
     return render(request, 'core/home.html')
 
 def search(request):
+    initialize_data_structures()  # Initialize when needed
     query = request.GET.get('q', '')
     if query:
         SearchQuery.objects.create(query=query)
@@ -54,6 +66,7 @@ def search(request):
     return JsonResponse({'results': []})
 
 def search_suggestions(request):
+    initialize_data_structures()  # Initialize when needed
     query = request.GET.get('q', '').lower()
     suggestions = []
     
@@ -82,6 +95,7 @@ def search_suggestions(request):
 @csrf_protect
 @require_http_methods(["POST"])
 def upvote(request, resource_id):
+    initialize_data_structures()  # Initialize when needed
     try:
         resource = Resource.objects.get(id=resource_id)
         resource.upvotes += 1
@@ -93,6 +107,3 @@ def upvote(request, resource_id):
         return JsonResponse({'success': True, 'upvotes': resource.upvotes})
     except Resource.DoesNotExist:
         return JsonResponse({'success': False}, status=404)
-
-# Initialize data structures when the module loads
-initialize_data_structures()

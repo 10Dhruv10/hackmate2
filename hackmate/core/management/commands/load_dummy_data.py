@@ -1,16 +1,15 @@
 from django.core.management.base import BaseCommand
-from core.models import Resource, Team
+from core.models import Resource
+from core.data_structures import resource_heap
 
 class Command(BaseCommand):
-    help = 'Loads all dummy data for HackMate'
+    help = 'Loads dummy data for HackMate'
 
     def handle(self, *args, **kwargs):
-        # Clear existing data
+        # First, clear existing data
         Resource.objects.all().delete()
-        Team.objects.all().delete()
 
-        # Resources data
-        resources_data = [
+        dummy_data = [
             {
                 'title': 'React Weather Dashboard',
                 'description': 'Build a weather dashboard using React and OpenWeather API',
@@ -36,6 +35,14 @@ class Command(BaseCommand):
                 'upvotes': 30
             },
             {
+                'title': 'AI Image Generator',
+                'description': 'Create an AI-powered image generation app using DALL-E API',
+                'url': 'https://github.com/example/ai-image-gen',
+                'category': 'IDEA',
+                'keywords': 'python,ai,image generation,api',
+                'upvotes': 20
+            },
+            {
                 'title': 'Python FastAPI Boilerplate',
                 'description': 'Quick start template for FastAPI backend',
                 'url': 'https://github.com/example/fastapi-starter',
@@ -45,9 +52,8 @@ class Command(BaseCommand):
             }
         ]
 
-      
+        for data in dummy_data:
+            resource = Resource.objects.create(**data)
+            resource_heap.push(resource)
+            self.stdout.write(self.style.SUCCESS(f'Created resource: {resource.title}'))
 
-        # Create resources
-        for data in resources_data:
-            Resource.objects.create(**data)
-            self.stdout.write(self.style.SUCCESS(f'Created resource: {data["title"]}'))
