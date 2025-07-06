@@ -6,7 +6,6 @@ class Command(BaseCommand):
     help = 'Loads dummy data for HackMate'
 
     def handle(self, *args, **kwargs):
-        # First, clear existing data
         Resource.objects.all().delete()
 
         dummy_data = [

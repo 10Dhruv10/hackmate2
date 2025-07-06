@@ -3,20 +3,39 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.db.models import Q
 from .models import Resource, SearchQuery
+import heapq
+from typing import List, Tuple
 
 @ensure_csrf_cookie
 def home(request):
     return render(request, 'core/home.html')
 
+def convert_to_heap_entry(resource) -> Tuple[int, int, Resource]:                #i am calling those entries as resources
+    return (-resource.upvotes, resource.id, resource)
+
+def get_top_results(resources: List[Resource]) -> List[Resource]:
+    # use negative upvotes for max-heap behavior
+    heap_entries = [convert_to_heap_entry(r) for r in resources]                  #O(n)
+    heapq.heapify(heap_entries)                                                   #O(logn)
+    
+    # Pop from heap to get sorted results
+    sorted_results = []
+    while heap_entries:
+        _, _, resource = heapq.heappop(heap_entries)                              #O(nlogn)
+        sorted_results.append(resource)
+    
+    return sorted_results
+
 def search(request):
     query = request.GET.get('q', '').lower()
     if query:
+        # Log the search query
         SearchQuery.objects.create(query=query)
         
         # Split query into words for more precise matching
         query_words = query.split()
         
-        # Base query looking for matches in title, description, or keywords
+        # Base query looking for matches in title or keywords
         results = Resource.objects.filter(
             Q(title__icontains=query) |
             Q(keywords__icontains=query)
@@ -38,8 +57,8 @@ def search(request):
             if is_relevant:
                 filtered_results.append(resource)
         
-        # Sort by upvotes
-        filtered_results.sort(key=lambda x: x.upvotes, reverse=True)
+
+        sorted_results = get_top_results(filtered_results)             #heap comes into picture here
         
         return JsonResponse({
             'results': [{
@@ -50,9 +69,26 @@ def search(request):
                 'category': r.get_category_display(),
                 'upvotes': r.upvotes,
                 'keywords': r.keywords
-            } for r in filtered_results]
+            } for r in sorted_results]
         })
     return JsonResponse({'results': []})
+
+def get_top_suggestions(words: set, query: str, limit: int = 5) -> List[str]:
+    """
+    Use a heap to get top suggestions.
+    Returns up to 'limit' suggestions that start with query.
+    """
+    
+    heap = []                                                               #minheap
+    
+    for word in words:
+        if word.startswith(query):
+            heapq.heappush(heap, (len(word), word))
+            if len(heap) > limit:
+                heapq.heappop(heap)
+    
+    # GET the words from heap in reverse order
+    return [item[1] for item in sorted(heap)]                               #i'm making it a max heap
 
 def search_suggestions(request):
     query = request.GET.get('q', '').lower()
@@ -64,16 +100,15 @@ def search_suggestions(request):
             Q(keywords__icontains=query)
         ).distinct()
         
+        # I am collecting words from titles and keywords here
         words = set()
         for resource in resources:
-            # Only add suggestions from relevant fields
             words.update(word.lower() for word in resource.title.split())
             if resource.keywords:
-                words.update(keyword.strip().lower() for keyword in resource.keywords.split(','))
+                words.update(keyword.strip().lower() 
+                           for keyword in resource.keywords.split(','))
         
-        suggestions = [word for word in words if word.startswith(query)]
-        suggestions.sort()
-        suggestions = suggestions[:5]
+        suggestions = get_top_suggestions(words, query, limit=5)
     
     return JsonResponse({'suggestions': suggestions})
 
